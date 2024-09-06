@@ -20,7 +20,16 @@ fn main() {
                         }
                     }
                     "\\d" => {
-                        if input_line.chars().any(|c| c.is_digit(10)) {
+                        if input_line.chars().any(|c| c.is_ascii_digit()) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    "\\w" => {
+                        if input_line
+                            .chars()
+                            .any(|c| c.is_ascii_alphanumeric() || c == '_')
+                        {
                             found = true;
                             break;
                         }
