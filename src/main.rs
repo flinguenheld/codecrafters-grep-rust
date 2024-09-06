@@ -19,9 +19,16 @@ fn main() {
                         .filter(|c| c.is_ascii_alphabetic())
                         .collect::<String>();
 
-                    if input_line.chars().any(|c| letters.contains(c)) {
-                        found = true;
-                        break;
+                    if a.starts_with("[^") {
+                        if input_line.chars().all(|c| !letters.contains(c)) {
+                            found = true;
+                            break;
+                        }
+                    } else {
+                        if input_line.chars().any(|c| letters.contains(c)) {
+                            found = true;
+                            break;
+                        }
                     }
                 }
 
