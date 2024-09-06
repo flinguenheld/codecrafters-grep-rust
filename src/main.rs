@@ -9,79 +9,96 @@ fn main() {
 
     let mut input_line = String::new();
     if io::stdin().read_line(&mut input_line).is_ok() {
-        let mut found = false;
-        // if let Some(pattern) = env::args().last() {
-        for arg in env::args() {
-            match arg.as_str() {
-                a if arg.starts_with('[') && arg.ends_with(']') => {
-                    let letters = a
-                        .chars()
-                        .filter(|c| c.is_ascii_alphabetic())
-                        .collect::<String>();
+        let mut pat: Vec<Box<dyn Fn(char) -> bool>> = Vec::new();
+        if let Some(raw_pattern) = env::args().nth(1) {
+            let mut current = String::new();
+            for c in raw_pattern.chars() {
+                current.push(c);
 
-                    if a.starts_with("[^") {
-                        if input_line.chars().all(|c| !letters.contains(c)) {
-                            found = true;
-                            break;
+                if current == "\\" {
+                    continue;
+                } else if current.starts_with('\\') {
+                    match c {
+                        'd' => {
+                            pat.push(Box::new(|c: char| c.is_ascii_digit()));
+                        }
+                        'w' => {
+                            pat.push(Box::new(|c: char| c.is_ascii_alphanumeric()));
+                        }
+                        _ => {}
+                    }
+                    current.clear();
+                } else if current.starts_with('[') && !current.ends_with(']') {
+                    continue;
+                } else if current.starts_with("[^") && current.ends_with(']') {
+                    let blah: String = current
+                        .chars()
+                        .filter(|cc| cc.is_ascii_alphanumeric())
+                        .collect();
+
+                    let wooooo: String = (1_u8..=126)
+                        .map(|i| i as char)
+                        .filter(|cc| blah.contains(*cc))
+                        .collect();
+
+                    // Farfetch -_-'
+
+                    pat.push(Box::new(move |ch: char| wooooo.contains(ch)));
+                } else if current.starts_with('[') && current.ends_with(']') {
+                    let blah: String = current
+                        .chars()
+                        .filter(|cc| cc.is_ascii_alphanumeric())
+                        .collect();
+                    pat.push(Box::new(move |ch: char| blah.contains(ch)));
+                } else {
+                    println!("Add just a char: {}", c);
+                    pat.push(Box::new(move |ch: char| ch == c));
+                    current.clear();
+                }
+            }
+
+            let mut found = false;
+
+            'aaa: for i in 0..input_line.chars().count() {
+                let mut pat_iter = pat.iter();
+                let mut inp_iter = input_line.chars().skip(i).into_iter();
+
+                loop {
+                    if let Some(p) = pat_iter.next() {
+                        if let Some(c) = inp_iter.next() {
+                            if !(p)(c) {
+                                continue 'aaa;
+                            }
+                        } else {
+                            continue 'aaa;
                         }
                     } else {
-                        if input_line.chars().any(|c| letters.contains(c)) {
-                            found = true;
-                            break;
-                        }
+                        found = true;
+                        break;
                     }
                 }
 
-                "\\d" => {
-                    if input_line.chars().any(|c| c.is_ascii_digit()) {
-                        found = true;
-                        break;
-                    }
+                // for (c, p) in input_line.chars().skip(i).zip(pat.iter()) {
+                //     if !(p)(c) {
+                //         continue 'aaa;
+                //     }
+                // }
+                // println!("Whole pattern checked");
+                // found = true;
+            }
+
+            match found {
+                true => {
+                    println!("Found");
+                    process::exit(0)
                 }
-                "\\w" => {
-                    if input_line
-                        .chars()
-                        .any(|c| c.is_ascii_alphanumeric() || c == '_')
-                    {
-                        found = true;
-                        break;
-                    }
-                }
-                _ => {
-                    if input_line.contains(arg.as_str()) {
-                        found = true;
-                        break;
-                    }
+                false => {
+                    println!("Not found");
+                    process::exit(1)
                 }
             }
         }
-
-        match found {
-            true => {
-                println!("Found");
-                process::exit(0)
-            }
-            false => {
-                println!("Not found");
-                process::exit(1)
-            }
-        }
-
-        // if env::args().nth(1).unwrap() != "-E" {
-        //     println!("Expected first argument to be '-E'");
-        //     process::exit(1);
-        // }
-
-        // let pattern = env::args().nth(2).unwrap();
-        // let mut input_line = String::new();
-
-        // Uncomment this block to pass the first stage
-        // if match_pattern(&input_line, &pattern) {
-        //     println!("Pattern '{}' found", pattern);
-        //     process::exit(0)
-        // } else {
-        //     process::exit(1)
-        // }
     }
+
     process::exit(1)
 }
