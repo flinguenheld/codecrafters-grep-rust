@@ -10,7 +10,7 @@ fn main() {
     let mut input_line = String::new();
     if io::stdin().read_line(&mut input_line).is_ok() {
         let mut pat: Vec<Box<dyn Fn(char) -> bool>> = Vec::new();
-        if let Some(raw_pattern) = env::args().nth(1) {
+        if let Some(raw_pattern) = env::args().last() {
             let mut current = String::new();
             for c in raw_pattern.chars() {
                 current.push(c);
