@@ -38,10 +38,12 @@ fn main() {
 
                     let wooooo: String = (1_u8..=126)
                         .map(|i| i as char)
-                        .filter(|cc| blah.contains(*cc))
+                        .filter(|cc| !blah.contains(*cc))
                         .collect();
 
                     // Farfetch -_-'
+
+                    // dbg!(&wooooo);
 
                     pat.push(Box::new(move |ch: char| wooooo.contains(ch)));
                 } else if current.starts_with('[') && current.ends_with(']') {
