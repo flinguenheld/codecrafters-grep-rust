@@ -10,7 +10,20 @@ fn main() {
     let mut input_line = String::new();
     if io::stdin().read_line(&mut input_line).is_ok() {
         let mut pat: Vec<Box<dyn Fn(char) -> bool>> = Vec::new();
-        if let Some(raw_pattern) = env::args().last() {
+        if let Some(mut raw_pattern) = env::args().last() {
+            let start = if raw_pattern.starts_with('^') {
+                raw_pattern.remove(0);
+                true
+            } else {
+                false
+            };
+            // let end = if raw_pattern.ends_with('$') {
+            //     raw_pattern.pop();
+            //     true
+            // } else {
+            //     false
+            // };
+
             let mut current = String::new();
             for c in raw_pattern.chars() {
                 current.push(c);
@@ -31,21 +44,19 @@ fn main() {
                 } else if current.starts_with('[') && !current.ends_with(']') {
                     continue;
                 } else if current.starts_with("[^") && current.ends_with(']') {
-                    let blah: String = current
+                    let characters: String = current
                         .chars()
                         .filter(|cc| cc.is_ascii_alphanumeric())
                         .collect();
 
-                    let wooooo: String = (1_u8..=126)
-                        .map(|i| i as char)
-                        .filter(|cc| !blah.contains(*cc))
+                    let ascii_reverse: String = (1_u8..=126)
+                        .map(|n| n as char)
+                        .filter(|cc| !characters.contains(*cc))
                         .collect();
 
                     // Farfetch -_-'
 
-                    // dbg!(&wooooo);
-
-                    pat.push(Box::new(move |ch: char| wooooo.contains(ch)));
+                    pat.push(Box::new(move |ch: char| ascii_reverse.contains(ch)));
                 } else if current.starts_with('[') && current.ends_with(']') {
                     let blah: String = current
                         .chars()
@@ -59,35 +70,28 @@ fn main() {
                 }
             }
 
-            let mut found = false;
+            // let mut found = false;
+            let found = test_pattern(input_line, &pat, start);
 
-            'aaa: for i in 0..input_line.chars().count() {
-                let mut pat_iter = pat.iter();
-                let mut inp_iter = input_line.chars().skip(i).into_iter();
+            // 'aaa: for i in 0..input_line.chars().count() {
+            //     let mut pat_iter = pat.iter();
+            //     let mut inp_iter = input_line.chars().skip(i).into_iter();
 
-                loop {
-                    if let Some(p) = pat_iter.next() {
-                        if let Some(c) = inp_iter.next() {
-                            if !(p)(c) {
-                                continue 'aaa;
-                            }
-                        } else {
-                            continue 'aaa;
-                        }
-                    } else {
-                        found = true;
-                        break;
-                    }
-                }
-
-                // for (c, p) in input_line.chars().skip(i).zip(pat.iter()) {
-                //     if !(p)(c) {
-                //         continue 'aaa;
-                //     }
-                // }
-                // println!("Whole pattern checked");
-                // found = true;
-            }
+            //     loop {
+            //         if let Some(p) = pat_iter.next() {
+            //             if let Some(c) = inp_iter.next() {
+            //                 if !(p)(c) {
+            //                     continue 'aaa;
+            //                 }
+            //             } else {
+            //                 continue 'aaa;
+            //             }
+            //         } else {
+            //             found = true;
+            //             break;
+            //         }
+            //     }
+            // }
 
             match found {
                 true => {
@@ -103,4 +107,35 @@ fn main() {
     }
 
     process::exit(1)
+}
+
+fn test_pattern(
+    input_line: String,
+    pattern: &Vec<Box<dyn Fn(char) -> bool>>,
+    on_start_only: bool,
+) -> bool {
+    'aaa: for i in 0..input_line.chars().count() {
+        let mut pat_iter = pattern.iter();
+        let mut inp_iter = input_line.chars().skip(i);
+
+        loop {
+            if let Some(p) = pat_iter.next() {
+                if let Some(c) = inp_iter.next() {
+                    if !(p)(c) {
+                        if on_start_only {
+                            return false;
+                        } else {
+                            continue 'aaa;
+                        }
+                    }
+                } else {
+                    continue 'aaa;
+                }
+            } else {
+                return true;
+            }
+        }
+    }
+
+    false
 }
