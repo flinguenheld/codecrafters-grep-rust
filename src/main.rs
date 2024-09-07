@@ -11,18 +11,15 @@ fn main() {
     if io::stdin().read_line(&mut input_line).is_ok() {
         let mut pat: Vec<Box<dyn Fn(char) -> bool>> = Vec::new();
         if let Some(mut raw_pattern) = env::args().last() {
-            let start = if raw_pattern.starts_with('^') {
+            let mut start_end = (false, false);
+            if raw_pattern.starts_with('^') {
                 raw_pattern.remove(0);
-                true
-            } else {
-                false
-            };
-            // let end = if raw_pattern.ends_with('$') {
-            //     raw_pattern.pop();
-            //     true
-            // } else {
-            //     false
-            // };
+                start_end.0 = true;
+            }
+            if raw_pattern.ends_with('$') {
+                raw_pattern.pop();
+                start_end.1 = true;
+            }
 
             let mut current = String::new();
             for c in raw_pattern.chars() {
@@ -70,28 +67,15 @@ fn main() {
                 }
             }
 
-            // let mut found = false;
-            let found = test_pattern(input_line, &pat, start);
-
-            // 'aaa: for i in 0..input_line.chars().count() {
-            //     let mut pat_iter = pat.iter();
-            //     let mut inp_iter = input_line.chars().skip(i).into_iter();
-
-            //     loop {
-            //         if let Some(p) = pat_iter.next() {
-            //             if let Some(c) = inp_iter.next() {
-            //                 if !(p)(c) {
-            //                     continue 'aaa;
-            //                 }
-            //             } else {
-            //                 continue 'aaa;
-            //             }
-            //         } else {
-            //             found = true;
-            //             break;
-            //         }
-            //     }
-            // }
+            let found = match start_end {
+                (true, false) => test_pattern(&input_line, &pat, true),
+                (false, true) => test_pattern_reverse(&input_line, &pat, true),
+                (true, true) => {
+                    test_pattern(&input_line, &pat, true)
+                        && test_pattern_reverse(&input_line, &pat, true)
+                }
+                _ => test_pattern(&input_line, &pat, false),
+            };
 
             match found {
                 true => {
@@ -110,7 +94,7 @@ fn main() {
 }
 
 fn test_pattern(
-    input_line: String,
+    input_line: &String,
     pattern: &Vec<Box<dyn Fn(char) -> bool>>,
     on_start_only: bool,
 ) -> bool {
@@ -123,6 +107,37 @@ fn test_pattern(
                 if let Some(c) = inp_iter.next() {
                     if !(p)(c) {
                         if on_start_only {
+                            return false;
+                        } else {
+                            continue 'aaa;
+                        }
+                    }
+                } else {
+                    continue 'aaa;
+                }
+            } else {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+fn test_pattern_reverse(
+    input_line: &String,
+    pattern: &Vec<Box<dyn Fn(char) -> bool>>,
+    // Remove that ?
+    on_end_only: bool,
+) -> bool {
+    'aaa: for i in 0..input_line.chars().count() {
+        let mut pat_iter = pattern.iter().rev();
+        let mut inp_iter = input_line.chars().rev().skip(i);
+
+        loop {
+            if let Some(p) = pat_iter.next() {
+                if let Some(c) = inp_iter.next() {
+                    if !(p)(c) {
+                        if on_end_only {
                             return false;
                         } else {
                             continue 'aaa;
