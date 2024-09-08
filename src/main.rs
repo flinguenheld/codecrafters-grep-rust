@@ -3,6 +3,13 @@ use std::io;
 use std::process;
 use std::rc::Rc;
 
+enum Pouet {
+    Ok,
+    OkRepeat,
+    EndRepeat,
+    Nok,
+}
+
 // Usage: echo <input_text> | your_program.sh -E <pattern>
 fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
@@ -10,7 +17,7 @@ fn main() {
 
     let mut input_line = String::new();
     if io::stdin().read_line(&mut input_line).is_ok() {
-        let mut pat: Vec<Rc<dyn Fn(char) -> bool>> = Vec::new();
+        let mut pat: Vec<Rc<dyn Fn(char) -> Pouet>> = Vec::new();
         if let Some(mut raw_pattern) = env::args().last() {
             let mut start_end = (false, false);
             if raw_pattern.starts_with('^') {
@@ -22,6 +29,7 @@ fn main() {
                 start_end.1 = true;
             }
 
+            let mut previous_char = '\0';
             let mut current = String::new();
             for c in raw_pattern.chars() {
                 current.push(c);
@@ -31,10 +39,22 @@ fn main() {
                 } else if current.starts_with('\\') {
                     match c {
                         'd' => {
-                            pat.push(Rc::new(|c: char| c.is_ascii_digit()));
+                            pat.push(Rc::new(|c: char| {
+                                if c.is_ascii_digit() {
+                                    Pouet::Ok
+                                } else {
+                                    Pouet::Nok
+                                }
+                            }));
                         }
                         'w' => {
-                            pat.push(Rc::new(|c: char| c.is_ascii_alphanumeric()));
+                            pat.push(Rc::new(|c: char| {
+                                if c.is_ascii_alphanumeric() {
+                                    Pouet::Ok
+                                } else {
+                                    Pouet::Nok
+                                }
+                            }));
                         }
                         _ => {}
                     }
@@ -54,16 +74,43 @@ fn main() {
 
                     // Farfetch -_-'
 
-                    pat.push(Rc::new(move |ch: char| ascii_reverse.contains(ch)));
+                    pat.push(Rc::new(move |ch: char| {
+                        if ascii_reverse.contains(ch) {
+                            Pouet::Ok
+                        } else {
+                            Pouet::Nok
+                        }
+                    }));
                 } else if current.starts_with('[') && current.ends_with(']') {
                     let blah: String = current
                         .chars()
                         .filter(|cc| cc.is_ascii_alphanumeric())
                         .collect();
-                    pat.push(Rc::new(move |ch: char| blah.contains(ch)));
+                    pat.push(Rc::new(move |ch: char| {
+                        if blah.contains(ch) {
+                            Pouet::Ok
+                        } else {
+                            Pouet::Nok
+                        }
+                    }));
+                } else if current == "+" {
+                    println!("Add +");
+                    let prev = previous_char.clone();
+                    pat.push(Rc::new(move |ch: char| {
+                        if ch == prev {
+                            Pouet::OkRepeat
+                        } else {
+                            Pouet::EndRepeat
+                        }
+                    }));
+                    current.clear();
+                    previous_char = '\0';
                 } else {
                     println!("Add just a char: {}", c);
-                    pat.push(Rc::new(move |ch: char| ch == c));
+                    pat.push(Rc::new(
+                        move |ch: char| if ch == c { Pouet::Ok } else { Pouet::Nok },
+                    ));
+                    previous_char = current.chars().last().unwrap();
                     current.clear();
                 }
             }
@@ -104,26 +151,41 @@ fn main() {
 
 fn test_pattern(
     input_line: &String,
-    pattern: &Vec<Rc<dyn Fn(char) -> bool>>,
+    pattern: &Vec<Rc<dyn Fn(char) -> Pouet>>,
     on_start_only: bool,
 ) -> bool {
     'aaa: for i in 0..input_line.chars().count() {
         let mut pat_iter = pattern.iter();
-        let mut inp_iter = input_line.chars().skip(i);
+        let mut inp_iter = input_line.chars().skip(i).peekable();
 
-        loop {
+        'bbb: loop {
             if let Some(p) = pat_iter.next() {
-                if let Some(c) = inp_iter.next() {
-                    if !(p)(c) {
-                        if on_start_only {
-                            return false;
-                        } else {
-                            continue 'aaa;
+                'ccc: while let Some(c) = inp_iter.peek() {
+                    println!("Testing this char: {}", c);
+                    match (p)(*c) {
+                        Pouet::Ok => {
+                            inp_iter.next();
+                            continue 'bbb;
+                        }
+                        Pouet::OkRepeat => {
+                            dbg!("Ok repeat");
+                            inp_iter.next();
+                            continue 'ccc;
+                        }
+                        Pouet::EndRepeat => {
+                            dbg!("End repeat");
+                            continue 'bbb;
+                        }
+                        Pouet::Nok => {
+                            if on_start_only {
+                                return false;
+                            } else {
+                                continue 'aaa;
+                            }
                         }
                     }
-                } else {
-                    continue 'aaa;
                 }
+                continue 'aaa;
             } else {
                 return true;
             }
