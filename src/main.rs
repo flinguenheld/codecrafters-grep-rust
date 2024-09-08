@@ -114,6 +114,10 @@ fn main() {
                         }));
                     }
                     current.clear();
+                } else if current == "." {
+                    println!("Add .");
+                    pat.push(Rc::new(move |_| Pouet::Ok));
+                    current.clear();
                 } else {
                     println!("Add just a char: {}", c);
                     pat.push(Rc::new(
@@ -188,7 +192,6 @@ fn test_pattern(
                         Pouet::Optional => {
                             dbg!("Optional");
                             // inp_iter.next();
-                            // AdAPT
                             continue 'bbb;
                         }
                         Pouet::Nok => {
@@ -202,7 +205,7 @@ fn test_pattern(
                     }
                 }
 
-                // Check ?
+                // Special check a ? is in the last position
                 if (p)('\0') == Pouet::Optional && pat_iter.cloned().next().is_none() {
                     dbg!("Validate last optional");
                     return true;
