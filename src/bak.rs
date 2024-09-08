@@ -3,10 +3,12 @@ use std::io;
 use std::process;
 use std::rc::Rc;
 
+#[derive(PartialEq, Eq)]
 enum Pouet {
     Ok,
     OkRepeat,
     EndRepeat,
+    Optional,
     Nok,
 }
 
@@ -29,7 +31,6 @@ fn main() {
                 start_end.1 = true;
             }
 
-            let mut previous_char = '\0';
             let mut current = String::new();
             for c in raw_pattern.chars() {
                 current.push(c);
@@ -81,6 +82,7 @@ fn main() {
                             Pouet::Nok
                         }
                     }));
+                    current.clear();
                 } else if current.starts_with('[') && current.ends_with(']') {
                     let blah: String = current
                         .chars()
@@ -93,24 +95,34 @@ fn main() {
                             Pouet::Nok
                         }
                     }));
+                    current.clear();
                 } else if current == "+" {
                     println!("Add +");
-                    let prev = previous_char.clone();
-                    pat.push(Rc::new(move |ch: char| {
-                        if ch == prev {
-                            Pouet::OkRepeat
-                        } else {
-                            Pouet::EndRepeat
-                        }
-                    }));
+                    if let Some(last_pat) = pat.last().cloned() {
+                        pat.push(Rc::new(move |ch: char| match (last_pat)(ch) {
+                            Pouet::Ok => Pouet::OkRepeat,
+                            _ => Pouet::EndRepeat,
+                        }));
+                    }
                     current.clear();
-                    previous_char = '\0';
+                } else if current == "?" {
+                    println!("Add ?");
+                    if let Some(last_pat) = pat.pop() {
+                        pat.push(Rc::new(move |ch: char| match (last_pat)(ch) {
+                            Pouet::Ok => Pouet::Ok,
+                            _ => Pouet::Optional,
+                        }));
+                    }
+                    current.clear();
+                } else if current == "." {
+                    println!("Add .");
+                    pat.push(Rc::new(move |_| Pouet::Ok));
+                    current.clear();
                 } else {
                     println!("Add just a char: {}", c);
                     pat.push(Rc::new(
                         move |ch: char| if ch == c { Pouet::Ok } else { Pouet::Nok },
                     ));
-                    previous_char = current.chars().last().unwrap();
                     current.clear();
                 }
             }
@@ -156,29 +168,34 @@ fn test_pattern(
 ) -> bool {
     'aaa: for i in 0..input_line.chars().count() {
         let mut pat_iter = pattern.iter();
-        let mut pos = i;
-        // let mut inp_iter = input_line.chars().skip(i);
+        let mut inp_iter = input_line.chars().skip(i).peekable();
 
         'bbb: loop {
             if let Some(p) = pat_iter.next() {
-                // 'ccc: while let Some(c) = inp_iter.next() {
-                'ccc: while let Some(c) = input_line.chars().nth(pos) {
-                    pos += 1;
+                'ccc: while let Some(c) = inp_iter.peek() {
                     println!("Testing this char: {}", c);
-                    match (p)(c) {
+                    match (p)(*c) {
                         Pouet::Ok => {
+                            dbg!("Ok");
+                            inp_iter.next();
                             continue 'bbb;
                         }
                         Pouet::OkRepeat => {
                             dbg!("Ok repeat");
+                            inp_iter.next();
                             continue 'ccc;
                         }
                         Pouet::EndRepeat => {
                             dbg!("End repeat");
-                            pos -= 1;
+                            continue 'bbb;
+                        }
+                        Pouet::Optional => {
+                            dbg!("Optional");
+                            // inp_iter.next();
                             continue 'bbb;
                         }
                         Pouet::Nok => {
+                            dbg!("Nok");
                             if on_start_only {
                                 return false;
                             } else {
@@ -187,6 +204,13 @@ fn test_pattern(
                         }
                     }
                 }
+
+                // Special check a ? is in the last position
+                if (p)('\0') == Pouet::Optional && pat_iter.cloned().next().is_none() {
+                    dbg!("Validate last optional");
+                    return true;
+                }
+
                 continue 'aaa;
             } else {
                 return true;
