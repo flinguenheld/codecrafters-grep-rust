@@ -221,6 +221,8 @@ fn test_pattern(
             let mut pat_iter = pattern.iter();
             let mut inp_iter = input_line.chars().skip(i).peekable();
 
+            let mut ok_repeat_validation = false;
+
             'bbb: loop {
                 if let Some(p) = pat_iter.next() {
                     'ccc: while let Some(c) = inp_iter.peek() {
@@ -234,11 +236,18 @@ fn test_pattern(
                             Check::OkRepeat => {
                                 dbg!("Ok repeat");
                                 inp_iter.next();
+                                ok_repeat_validation = true;
                                 continue 'ccc;
                             }
                             Check::EndRepeat => {
                                 dbg!("End repeat");
-                                continue 'bbb;
+                                if ok_repeat_validation {
+                                    ok_repeat_validation = false;
+
+                                    continue 'bbb;
+                                } else {
+                                    continue 'aaa;
+                                }
                             }
                             Check::Optional => {
                                 dbg!("Optional");
@@ -256,10 +265,18 @@ fn test_pattern(
                         }
                     }
 
-                    // Special check a ? is in the last position
-                    if (p)('\0') == Check::Optional && pat_iter.cloned().next().is_none() {
-                        dbg!("Validate last optional");
-                        return true;
+                    if pat_iter.cloned().next().is_none() {
+                        // Special check for + is in the last position
+                        if ok_repeat_validation {
+                            dbg!("Validate last +");
+                            return true;
+                        }
+
+                        // Special check for ? is in the last position
+                        if (p)('\0') == Check::Optional {
+                            dbg!("Validate last optional");
+                            return true;
+                        }
                     }
 
                     continue 'aaa;
