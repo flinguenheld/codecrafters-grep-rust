@@ -29,7 +29,6 @@ fn main() {
                 start_end.1 = true;
             }
 
-            let mut previous_char = '\0';
             let mut current = String::new();
             for c in raw_pattern.chars() {
                 current.push(c);
@@ -81,6 +80,7 @@ fn main() {
                             Pouet::Nok
                         }
                     }));
+                    current.clear();
                 } else if current.starts_with('[') && current.ends_with(']') {
                     let blah: String = current
                         .chars()
@@ -93,24 +93,21 @@ fn main() {
                             Pouet::Nok
                         }
                     }));
+                    current.clear();
                 } else if current == "+" {
                     println!("Add +");
-                    let prev = previous_char.clone();
-                    pat.push(Rc::new(move |ch: char| {
-                        if ch == prev {
-                            Pouet::OkRepeat
-                        } else {
-                            Pouet::EndRepeat
-                        }
-                    }));
+                    if let Some(last_pat) = pat.last().cloned() {
+                        pat.push(Rc::new(move |ch: char| match (last_pat)(ch) {
+                            Pouet::Ok => Pouet::OkRepeat,
+                            _ => Pouet::EndRepeat,
+                        }));
+                    }
                     current.clear();
-                    previous_char = '\0';
                 } else {
                     println!("Add just a char: {}", c);
                     pat.push(Rc::new(
                         move |ch: char| if ch == c { Pouet::Ok } else { Pouet::Nok },
                     ));
-                    previous_char = current.chars().last().unwrap();
                     current.clear();
                 }
             }
@@ -164,6 +161,7 @@ fn test_pattern(
                     println!("Testing this char: {}", c);
                     match (p)(*c) {
                         Pouet::Ok => {
+                            dbg!("Ok");
                             inp_iter.next();
                             continue 'bbb;
                         }
@@ -177,6 +175,7 @@ fn test_pattern(
                             continue 'bbb;
                         }
                         Pouet::Nok => {
+                            dbg!("Nok");
                             if on_start_only {
                                 return false;
                             } else {
