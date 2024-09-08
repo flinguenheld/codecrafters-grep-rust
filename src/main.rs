@@ -3,10 +3,12 @@ use std::io;
 use std::process;
 use std::rc::Rc;
 
+#[derive(PartialEq, Eq)]
 enum Pouet {
     Ok,
     OkRepeat,
     EndRepeat,
+    Optional,
     Nok,
 }
 
@@ -103,6 +105,15 @@ fn main() {
                         }));
                     }
                     current.clear();
+                } else if current == "?" {
+                    println!("Add ?");
+                    if let Some(last_pat) = pat.pop() {
+                        pat.push(Rc::new(move |ch: char| match (last_pat)(ch) {
+                            Pouet::Ok => Pouet::Ok,
+                            _ => Pouet::Optional,
+                        }));
+                    }
+                    current.clear();
                 } else {
                     println!("Add just a char: {}", c);
                     pat.push(Rc::new(
@@ -174,6 +185,12 @@ fn test_pattern(
                             dbg!("End repeat");
                             continue 'bbb;
                         }
+                        Pouet::Optional => {
+                            dbg!("Optional");
+                            // inp_iter.next();
+                            // AdAPT
+                            continue 'bbb;
+                        }
                         Pouet::Nok => {
                             dbg!("Nok");
                             if on_start_only {
@@ -184,6 +201,13 @@ fn test_pattern(
                         }
                     }
                 }
+
+                // Check ?
+                if (p)('\0') == Pouet::Optional && pat_iter.cloned().next().is_none() {
+                    dbg!("Validate last optional");
+                    return true;
+                }
+
                 continue 'aaa;
             } else {
                 return true;
