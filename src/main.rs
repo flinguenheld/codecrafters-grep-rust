@@ -154,7 +154,7 @@ fn main() {
                 } else if current == "?" {
                     println!("Add ?");
                     if let Some(last_pat) = pop_last_pattern(&mut patterns) {
-                        (
+                        add_pattern(
                             Rc::new(move |ch: char| match (last_pat)(ch) {
                                 Check::Ok => Check::Ok,
                                 _ => Check::Optional,
