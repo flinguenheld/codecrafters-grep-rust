@@ -35,6 +35,7 @@ fn add_pattern(
     record_back_ref: bool,
     back_references: &mut Vec<Vec<Vec<Rc<dyn Fn(char) -> Check>>>>,
 ) {
+    println!("Add char to {} pattern", patterns.len());
     for p in patterns.iter_mut() {
         p.push(new_pattern.clone());
     }
@@ -56,7 +57,7 @@ fn main() {
         let mut temp_at_parenthesis: Vec<Vec<Rc<dyn Fn(char) -> Check>>> = vec![Vec::new()];
         let mut temps_at_pipes: Vec<Vec<Vec<Rc<dyn Fn(char) -> Check>>>> = Vec::new();
 
-        let mut back_references: Vec<Vec<Vec<Rc<dyn Fn(char) -> Check>>>> = vec![Vec::new()];
+        let mut back_references: Vec<Vec<Vec<Rc<dyn Fn(char) -> Check>>>> = Vec::new();
         let mut record_back_ref = false;
 
         if let Some(mut raw_pattern) = env::args().last() {
@@ -111,9 +112,12 @@ fn main() {
                         _ if c.is_ascii_digit() && c != '0' => {
                             dbg!("Add backref");
                             if let Some(index) = c.to_digit(10) {
-                                if let Some(mut back) =
+                                dbg!("Add backref {}", index);
+                                dbg!(&back_references.len());
+                                if let Some(back) =
                                     back_references.get((index - 1) as usize).cloned()
                                 {
+                                    dbg!("Add backref");
                                     dbg!("Back ref -> {}", index - 1);
                                     let temp = patterns;
                                     patterns = Vec::new();
@@ -185,10 +189,12 @@ fn main() {
                 } else if current == "(" {
                     temp_at_parenthesis = patterns.clone();
                     record_back_ref = true;
-                    if let Some(last) = back_references.last_mut() {
-                        last.push(Vec::new());
-                        // last.clear();
-                    }
+
+                    back_references.push(vec![Vec::new()]);
+                    // if let Some(last) = back_references.last_mut() {
+                    //     last.push(Vec::new());
+                    //     // last.clear();
+                    // }
                     current.clear();
                 } else if current == "|" {
                     temps_at_pipes.push(patterns);
