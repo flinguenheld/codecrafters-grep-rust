@@ -181,14 +181,20 @@ fn main() {
                 (true, false) => test_pattern(&input_line, &patterns, true),
                 (false, true) => test_pattern(
                     &input_line.chars().rev().collect(),
-                    &patterns.iter().rev().cloned().collect(),
+                    &patterns
+                        .iter()
+                        .map(|p| p.iter().cloned().rev().collect())
+                        .collect(),
                     true,
                 ),
                 (true, true) => {
                     test_pattern(&input_line, &patterns, true)
                         && test_pattern(
                             &input_line.chars().rev().collect(),
-                            &patterns.iter().rev().cloned().collect(),
+                            &patterns
+                                .iter()
+                                .map(|p| p.iter().cloned().rev().collect())
+                                .collect(),
                             true,
                         )
                 }
