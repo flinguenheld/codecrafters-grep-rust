@@ -15,7 +15,7 @@ enum Check {
 fn pop_last_pattern(
     patterns: &mut Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
     record_back_ref: bool,
-    back_references: &mut Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
+    back_references: &mut Vec<Vec<Vec<Rc<dyn Fn(char) -> Check>>>>,
 ) -> Option<Rc<dyn Fn(char) -> Check>> {
     let mut output = None;
     for p in patterns.iter_mut() {
@@ -23,7 +23,7 @@ fn pop_last_pattern(
     }
     if record_back_ref {
         if let Some(last) = back_references.last_mut() {
-            last.pop();
+            last.last_mut().unwrap().pop();
         }
     }
     output
@@ -33,14 +33,14 @@ fn add_pattern(
     new_pattern: Rc<dyn Fn(char) -> Check>,
     patterns: &mut Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
     record_back_ref: bool,
-    back_references: &mut Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
+    back_references: &mut Vec<Vec<Vec<Rc<dyn Fn(char) -> Check>>>>,
 ) {
     for p in patterns.iter_mut() {
         p.push(new_pattern.clone());
     }
     if record_back_ref {
         if let Some(last) = back_references.last_mut() {
-            last.push(new_pattern);
+            last.last_mut().unwrap().push(new_pattern);
         }
     }
 }
@@ -56,7 +56,7 @@ fn main() {
         let mut temp_at_parenthesis: Vec<Vec<Rc<dyn Fn(char) -> Check>>> = vec![Vec::new()];
         let mut temps_at_pipes: Vec<Vec<Vec<Rc<dyn Fn(char) -> Check>>>> = Vec::new();
 
-        let mut back_references: Vec<Vec<Rc<dyn Fn(char) -> Check>>> = vec![Vec::new()];
+        let mut back_references: Vec<Vec<Vec<Rc<dyn Fn(char) -> Check>>>> = vec![Vec::new()];
         let mut record_back_ref = false;
 
         if let Some(mut raw_pattern) = env::args().last() {
@@ -73,6 +73,8 @@ fn main() {
             let mut current = String::new();
             for c in raw_pattern.chars() {
                 current.push(c);
+
+                dbg!(&current);
 
                 if current == "\\" {
                     continue;
@@ -107,13 +109,29 @@ fn main() {
                             );
                         }
                         _ if c.is_ascii_digit() && c != '0' => {
+                            dbg!("Add backref");
                             if let Some(index) = c.to_digit(10) {
-                                if let Some(back) = back_references.get((index - 1) as usize) {
-                                    for back_pattern in back.iter() {
-                                        for p in patterns.iter_mut() {
-                                            p.push(back_pattern.clone());
+                                if let Some(mut back) =
+                                    back_references.get((index - 1) as usize).cloned()
+                                {
+                                    dbg!("Back ref -> {}", index - 1);
+                                    let temp = patterns;
+                                    patterns = Vec::new();
+
+                                    dbg!(&temp.len());
+                                    dbg!("->", &back.len());
+                                    dbg!(&patterns.len());
+
+                                    for temp_pattern in temp.iter() {
+                                        for mut back_pattern in back.clone().iter_mut() {
+                                            dbg!(&back_pattern.len());
+                                            let mut new_patt = temp_pattern.clone();
+                                            new_patt.append(&mut back_pattern);
+
+                                            patterns.push(new_patt);
                                         }
                                     }
+                                    dbg!(&patterns.len());
                                 }
                             }
                         }
@@ -167,20 +185,26 @@ fn main() {
                 } else if current == "(" {
                     temp_at_parenthesis = patterns.clone();
                     record_back_ref = true;
+                    if let Some(last) = back_references.last_mut() {
+                        last.push(Vec::new());
+                        // last.clear();
+                    }
                     current.clear();
                 } else if current == "|" {
                     temps_at_pipes.push(patterns);
                     patterns = temp_at_parenthesis.clone();
 
-                    record_back_ref = false;
+                    // record_back_ref = false;
                     if let Some(last) = back_references.last_mut() {
-                        last.clear();
+                        last.push(Vec::new());
+                        // last.clear();
                     }
                     current.clear();
                 } else if current == ")" {
                     for p in temps_at_pipes.iter_mut() {
                         patterns.append(p);
                     }
+
                     record_back_ref = false;
                     current.clear();
                 } else if current == "+" {

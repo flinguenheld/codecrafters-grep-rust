@@ -14,10 +14,17 @@ enum Check {
 
 fn pop_last_pattern(
     patterns: &mut Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
+    record_back_ref: bool,
+    back_references: &mut Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
 ) -> Option<Rc<dyn Fn(char) -> Check>> {
     let mut output = None;
     for p in patterns.iter_mut() {
         output = p.pop();
+    }
+    if record_back_ref {
+        if let Some(last) = back_references.last_mut() {
+            last.pop();
+        }
     }
     output
 }
@@ -25,9 +32,16 @@ fn pop_last_pattern(
 fn add_pattern(
     new_pattern: Rc<dyn Fn(char) -> Check>,
     patterns: &mut Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
+    record_back_ref: bool,
+    back_references: &mut Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
 ) {
     for p in patterns.iter_mut() {
         p.push(new_pattern.clone());
+    }
+    if record_back_ref {
+        if let Some(last) = back_references.last_mut() {
+            last.push(new_pattern);
+        }
     }
 }
 
@@ -41,6 +55,9 @@ fn main() {
         let mut patterns: Vec<Vec<Rc<dyn Fn(char) -> Check>>> = vec![Vec::new()];
         let mut temp_at_parenthesis: Vec<Vec<Rc<dyn Fn(char) -> Check>>> = vec![Vec::new()];
         let mut temps_at_pipes: Vec<Vec<Vec<Rc<dyn Fn(char) -> Check>>>> = Vec::new();
+
+        let mut back_references: Vec<Vec<Rc<dyn Fn(char) -> Check>>> = vec![Vec::new()];
+        let mut record_back_ref = false;
 
         if let Some(mut raw_pattern) = env::args().last() {
             let mut start_end = (false, false);
@@ -71,6 +88,8 @@ fn main() {
                                     }
                                 }),
                                 &mut patterns,
+                                record_back_ref,
+                                &mut back_references,
                             );
                         }
                         'w' => {
@@ -83,7 +102,20 @@ fn main() {
                                     }
                                 }),
                                 &mut patterns,
+                                record_back_ref,
+                                &mut back_references,
                             );
+                        }
+                        _ if c.is_ascii_digit() && c != '0' => {
+                            if let Some(index) = c.to_digit(10) {
+                                if let Some(back) = back_references.get((index - 1) as usize) {
+                                    for back_pattern in back.iter() {
+                                        for p in patterns.iter_mut() {
+                                            p.push(back_pattern.clone());
+                                        }
+                                    }
+                                }
+                            }
                         }
                         _ => {}
                     }
@@ -110,6 +142,8 @@ fn main() {
                             }
                         }),
                         &mut patterns,
+                        record_back_ref,
+                        &mut back_references,
                     );
                     current.clear();
                 } else if current.starts_with('[') && current.ends_with(']') {
@@ -126,52 +160,77 @@ fn main() {
                             }
                         }),
                         &mut patterns,
+                        record_back_ref,
+                        &mut back_references,
                     );
                     current.clear();
                 } else if current == "(" {
                     temp_at_parenthesis = patterns.clone();
+                    record_back_ref = true;
                     current.clear();
                 } else if current == "|" {
                     temps_at_pipes.push(patterns);
                     patterns = temp_at_parenthesis.clone();
+
+                    record_back_ref = false;
+                    if let Some(last) = back_references.last_mut() {
+                        last.clear();
+                    }
                     current.clear();
                 } else if current == ")" {
                     for p in temps_at_pipes.iter_mut() {
                         patterns.append(p);
                     }
+                    record_back_ref = false;
+                    current.clear();
                 } else if current == "+" {
                     println!("Add +");
-                    if let Some(last_pat) = pop_last_pattern(&mut patterns) {
+                    if let Some(last_pat) =
+                        pop_last_pattern(&mut patterns, record_back_ref, &mut back_references)
+                    {
                         add_pattern(
                             Rc::new(move |ch: char| match (last_pat)(ch) {
                                 Check::Ok => Check::OkRepeat,
                                 _ => Check::EndRepeat,
                             }),
                             &mut patterns,
+                            record_back_ref,
+                            &mut back_references,
                         );
                     }
                     current.clear();
                 } else if current == "?" {
                     println!("Add ?");
-                    if let Some(last_pat) = pop_last_pattern(&mut patterns) {
+                    if let Some(last_pat) =
+                        pop_last_pattern(&mut patterns, record_back_ref, &mut back_references)
+                    {
                         add_pattern(
                             Rc::new(move |ch: char| match (last_pat)(ch) {
                                 Check::Ok => Check::Ok,
                                 _ => Check::Optional,
                             }),
                             &mut patterns,
+                            record_back_ref,
+                            &mut back_references,
                         );
                     }
                     current.clear();
                 } else if current == "." {
                     println!("Add .");
-                    add_pattern(Rc::new(move |_| Check::Ok), &mut patterns);
+                    add_pattern(
+                        Rc::new(move |_| Check::Ok),
+                        &mut patterns,
+                        record_back_ref,
+                        &mut back_references,
+                    );
                     current.clear();
                 } else {
                     println!("Add just a char: {}", c);
                     add_pattern(
                         Rc::new(move |ch: char| if ch == c { Check::Ok } else { Check::Nok }),
                         &mut patterns,
+                        record_back_ref,
+                        &mut back_references,
                     );
                     current.clear();
                 }
