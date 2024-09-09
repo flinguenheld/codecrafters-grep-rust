@@ -42,6 +42,9 @@ fn main() {
         let mut temp_at_parenthesis: Vec<Vec<Rc<dyn Fn(char) -> Check>>> = vec![Vec::new()];
         let mut temps_at_pipes: Vec<Vec<Vec<Rc<dyn Fn(char) -> Check>>>> = Vec::new();
 
+        let mut back_references: Vec<String> = vec![String::new()];
+        let mut record_back_ref = false;
+
         if let Some(mut raw_pattern) = env::args().last() {
             let mut start_end = (false, false);
             if raw_pattern.starts_with('^') {
@@ -84,6 +87,24 @@ fn main() {
                                 }),
                                 &mut patterns,
                             );
+                        }
+                        _ if c.is_ascii_digit() && c != '0' => {
+                            if let Some(index) = c.to_digit(10) {
+                                if let Some(back) = back_references.get((index - 1) as usize) {
+                                    for letter in back.chars() {
+                                        add_pattern(
+                                            Rc::new(move |ch: char| {
+                                                if ch == letter {
+                                                    Check::Ok
+                                                } else {
+                                                    Check::Nok
+                                                }
+                                            }),
+                                            &mut patterns,
+                                        );
+                                    }
+                                }
+                            }
                         }
                         _ => {}
                     }
@@ -130,15 +151,23 @@ fn main() {
                     current.clear();
                 } else if current == "(" {
                     temp_at_parenthesis = patterns.clone();
+                    record_back_ref = true;
                     current.clear();
                 } else if current == "|" {
                     temps_at_pipes.push(patterns);
                     patterns = temp_at_parenthesis.clone();
+
+                    record_back_ref = false;
+                    if let Some(last) = back_references.last_mut() {
+                        last.clear();
+                    }
                     current.clear();
                 } else if current == ")" {
                     for p in temps_at_pipes.iter_mut() {
                         patterns.append(p);
                     }
+                    record_back_ref = false;
+                    current.clear();
                 } else if current == "+" {
                     println!("Add +");
                     if let Some(last_pat) = pop_last_pattern(&mut patterns) {
@@ -173,6 +202,11 @@ fn main() {
                         Rc::new(move |ch: char| if ch == c { Check::Ok } else { Check::Nok }),
                         &mut patterns,
                     );
+                    if record_back_ref {
+                        if let Some(last) = back_references.last_mut() {
+                            last.push_str(current.as_str());
+                        }
+                    }
                     current.clear();
                 }
             }

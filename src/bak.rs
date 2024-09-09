@@ -4,12 +4,31 @@ use std::process;
 use std::rc::Rc;
 
 #[derive(PartialEq, Eq)]
-enum Pouet {
+enum Check {
     Ok,
     OkRepeat,
     EndRepeat,
     Optional,
     Nok,
+}
+
+fn pop_last_pattern(
+    patterns: &mut Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
+) -> Option<Rc<dyn Fn(char) -> Check>> {
+    let mut output = None;
+    for p in patterns.iter_mut() {
+        output = p.pop();
+    }
+    output
+}
+
+fn add_pattern(
+    new_pattern: Rc<dyn Fn(char) -> Check>,
+    patterns: &mut Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
+) {
+    for p in patterns.iter_mut() {
+        p.push(new_pattern.clone());
+    }
 }
 
 // Usage: echo <input_text> | your_program.sh -E <pattern>
@@ -19,7 +38,10 @@ fn main() {
 
     let mut input_line = String::new();
     if io::stdin().read_line(&mut input_line).is_ok() {
-        let mut pat: Vec<Rc<dyn Fn(char) -> Pouet>> = Vec::new();
+        let mut patterns: Vec<Vec<Rc<dyn Fn(char) -> Check>>> = vec![Vec::new()];
+        let mut temp_at_parenthesis: Vec<Vec<Rc<dyn Fn(char) -> Check>>> = vec![Vec::new()];
+        let mut temps_at_pipes: Vec<Vec<Vec<Rc<dyn Fn(char) -> Check>>>> = Vec::new();
+
         if let Some(mut raw_pattern) = env::args().last() {
             let mut start_end = (false, false);
             if raw_pattern.starts_with('^') {
@@ -40,22 +62,28 @@ fn main() {
                 } else if current.starts_with('\\') {
                     match c {
                         'd' => {
-                            pat.push(Rc::new(|c: char| {
-                                if c.is_ascii_digit() {
-                                    Pouet::Ok
-                                } else {
-                                    Pouet::Nok
-                                }
-                            }));
+                            add_pattern(
+                                Rc::new(|c: char| {
+                                    if c.is_ascii_digit() {
+                                        Check::Ok
+                                    } else {
+                                        Check::Nok
+                                    }
+                                }),
+                                &mut patterns,
+                            );
                         }
                         'w' => {
-                            pat.push(Rc::new(|c: char| {
-                                if c.is_ascii_alphanumeric() {
-                                    Pouet::Ok
-                                } else {
-                                    Pouet::Nok
-                                }
-                            }));
+                            add_pattern(
+                                Rc::new(|c: char| {
+                                    if c.is_ascii_alphanumeric() {
+                                        Check::Ok
+                                    } else {
+                                        Check::Nok
+                                    }
+                                }),
+                                &mut patterns,
+                            );
                         }
                         _ => {}
                     }
@@ -73,76 +101,104 @@ fn main() {
                         .filter(|cc| !characters.contains(*cc))
                         .collect();
 
-                    // Farfetch -_-'
-
-                    pat.push(Rc::new(move |ch: char| {
-                        if ascii_reverse.contains(ch) {
-                            Pouet::Ok
-                        } else {
-                            Pouet::Nok
-                        }
-                    }));
+                    add_pattern(
+                        Rc::new(move |ch: char| {
+                            if ascii_reverse.contains(ch) {
+                                Check::Ok
+                            } else {
+                                Check::Nok
+                            }
+                        }),
+                        &mut patterns,
+                    );
                     current.clear();
                 } else if current.starts_with('[') && current.ends_with(']') {
                     let blah: String = current
                         .chars()
                         .filter(|cc| cc.is_ascii_alphanumeric())
                         .collect();
-                    pat.push(Rc::new(move |ch: char| {
-                        if blah.contains(ch) {
-                            Pouet::Ok
-                        } else {
-                            Pouet::Nok
-                        }
-                    }));
+                    add_pattern(
+                        Rc::new(move |ch: char| {
+                            if blah.contains(ch) {
+                                Check::Ok
+                            } else {
+                                Check::Nok
+                            }
+                        }),
+                        &mut patterns,
+                    );
                     current.clear();
+                } else if current == "(" {
+                    temp_at_parenthesis = patterns.clone();
+                    current.clear();
+                } else if current == "|" {
+                    temps_at_pipes.push(patterns);
+                    patterns = temp_at_parenthesis.clone();
+                    current.clear();
+                } else if current == ")" {
+                    for p in temps_at_pipes.iter_mut() {
+                        patterns.append(p);
+                    }
                 } else if current == "+" {
                     println!("Add +");
-                    if let Some(last_pat) = pat.last().cloned() {
-                        pat.push(Rc::new(move |ch: char| match (last_pat)(ch) {
-                            Pouet::Ok => Pouet::OkRepeat,
-                            _ => Pouet::EndRepeat,
-                        }));
+                    if let Some(last_pat) = pop_last_pattern(&mut patterns) {
+                        add_pattern(
+                            Rc::new(move |ch: char| match (last_pat)(ch) {
+                                Check::Ok => Check::OkRepeat,
+                                _ => Check::EndRepeat,
+                            }),
+                            &mut patterns,
+                        );
                     }
                     current.clear();
                 } else if current == "?" {
                     println!("Add ?");
-                    if let Some(last_pat) = pat.pop() {
-                        pat.push(Rc::new(move |ch: char| match (last_pat)(ch) {
-                            Pouet::Ok => Pouet::Ok,
-                            _ => Pouet::Optional,
-                        }));
+                    if let Some(last_pat) = pop_last_pattern(&mut patterns) {
+                        add_pattern(
+                            Rc::new(move |ch: char| match (last_pat)(ch) {
+                                Check::Ok => Check::Ok,
+                                _ => Check::Optional,
+                            }),
+                            &mut patterns,
+                        );
                     }
                     current.clear();
                 } else if current == "." {
                     println!("Add .");
-                    pat.push(Rc::new(move |_| Pouet::Ok));
+                    add_pattern(Rc::new(move |_| Check::Ok), &mut patterns);
                     current.clear();
                 } else {
                     println!("Add just a char: {}", c);
-                    pat.push(Rc::new(
-                        move |ch: char| if ch == c { Pouet::Ok } else { Pouet::Nok },
-                    ));
+                    add_pattern(
+                        Rc::new(move |ch: char| if ch == c { Check::Ok } else { Check::Nok }),
+                        &mut patterns,
+                    );
                     current.clear();
                 }
             }
 
             let found = match start_end {
-                (true, false) => test_pattern(&input_line, &pat, true),
+                (true, false) => test_pattern(&input_line, &patterns, true),
                 (false, true) => test_pattern(
                     &input_line.chars().rev().collect(),
-                    &pat.iter().rev().cloned().collect(),
+                    &patterns
+                        .iter()
+                        .map(|p| p.iter().cloned().rev().collect())
+                        .collect(),
                     true,
                 ),
                 (true, true) => {
-                    test_pattern(&input_line, &pat, true)
+                    test_pattern(&input_line, &patterns, true)
                         && test_pattern(
                             &input_line.chars().rev().collect(),
-                            &pat.iter().rev().cloned().collect(),
+                            &patterns
+                                .iter()
+                                .map(|p| p.iter().cloned().rev().collect())
+                                .collect(),
                             true,
                         )
                 }
-                _ => test_pattern(&input_line, &pat, false),
+                _ => test_pattern(&input_line, &patterns, false),
             };
 
             match found {
@@ -163,57 +219,76 @@ fn main() {
 
 fn test_pattern(
     input_line: &String,
-    pattern: &Vec<Rc<dyn Fn(char) -> Pouet>>,
+    patterns: &Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
     on_start_only: bool,
 ) -> bool {
-    'aaa: for i in 0..input_line.chars().count() {
-        let mut pat_iter = pattern.iter();
-        let mut inp_iter = input_line.chars().skip(i).peekable();
+    for pattern in patterns {
+        'aaa: for i in 0..input_line.chars().count() {
+            let mut pat_iter = pattern.iter();
+            let mut inp_iter = input_line.chars().skip(i).peekable();
 
-        'bbb: loop {
-            if let Some(p) = pat_iter.next() {
-                'ccc: while let Some(c) = inp_iter.peek() {
-                    println!("Testing this char: {}", c);
-                    match (p)(*c) {
-                        Pouet::Ok => {
-                            dbg!("Ok");
-                            inp_iter.next();
-                            continue 'bbb;
-                        }
-                        Pouet::OkRepeat => {
-                            dbg!("Ok repeat");
-                            inp_iter.next();
-                            continue 'ccc;
-                        }
-                        Pouet::EndRepeat => {
-                            dbg!("End repeat");
-                            continue 'bbb;
-                        }
-                        Pouet::Optional => {
-                            dbg!("Optional");
-                            // inp_iter.next();
-                            continue 'bbb;
-                        }
-                        Pouet::Nok => {
-                            dbg!("Nok");
-                            if on_start_only {
-                                return false;
-                            } else {
-                                continue 'aaa;
+            let mut ok_repeat_validation = false;
+
+            'bbb: loop {
+                if let Some(p) = pat_iter.next() {
+                    'ccc: while let Some(c) = inp_iter.peek() {
+                        println!("Testing this char: {}", c);
+                        match (p)(*c) {
+                            Check::Ok => {
+                                dbg!("Ok");
+                                inp_iter.next();
+                                continue 'bbb;
+                            }
+                            Check::OkRepeat => {
+                                dbg!("Ok repeat");
+                                inp_iter.next();
+                                ok_repeat_validation = true;
+                                continue 'ccc;
+                            }
+                            Check::EndRepeat => {
+                                dbg!("End repeat");
+                                if ok_repeat_validation {
+                                    ok_repeat_validation = false;
+
+                                    continue 'bbb;
+                                } else {
+                                    continue 'aaa;
+                                }
+                            }
+                            Check::Optional => {
+                                dbg!("Optional");
+                                // inp_iter.next();
+                                continue 'bbb;
+                            }
+                            Check::Nok => {
+                                dbg!("Nok");
+                                if on_start_only {
+                                    return false;
+                                } else {
+                                    continue 'aaa;
+                                }
                             }
                         }
                     }
-                }
 
-                // Special check a ? is in the last position
-                if (p)('\0') == Pouet::Optional && pat_iter.cloned().next().is_none() {
-                    dbg!("Validate last optional");
+                    if pat_iter.cloned().next().is_none() {
+                        // Special check for + is in the last position
+                        if ok_repeat_validation {
+                            dbg!("Validate last +");
+                            return true;
+                        }
+
+                        // Special check for ? is in the last position
+                        if (p)('\0') == Check::Optional {
+                            dbg!("Validate last optional");
+                            return true;
+                        }
+                    }
+
+                    continue 'aaa;
+                } else {
                     return true;
                 }
-
-                continue 'aaa;
-            } else {
-                return true;
             }
         }
     }
