@@ -14,10 +14,17 @@ enum Check {
 
 fn pop_last_pattern(
     patterns: &mut Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
+    record_back_ref: bool,
+    back_references: &mut Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
 ) -> Option<Rc<dyn Fn(char) -> Check>> {
     let mut output = None;
     for p in patterns.iter_mut() {
         output = p.pop();
+    }
+    if record_back_ref {
+        if let Some(last) = back_references.last_mut() {
+            last.pop();
+        }
     }
     output
 }
@@ -178,7 +185,9 @@ fn main() {
                     current.clear();
                 } else if current == "+" {
                     println!("Add +");
-                    if let Some(last_pat) = pop_last_pattern(&mut patterns) {
+                    if let Some(last_pat) =
+                        pop_last_pattern(&mut patterns, record_back_ref, &mut back_references)
+                    {
                         add_pattern(
                             Rc::new(move |ch: char| match (last_pat)(ch) {
                                 Check::Ok => Check::OkRepeat,
@@ -192,7 +201,9 @@ fn main() {
                     current.clear();
                 } else if current == "?" {
                     println!("Add ?");
-                    if let Some(last_pat) = pop_last_pattern(&mut patterns) {
+                    if let Some(last_pat) =
+                        pop_last_pattern(&mut patterns, record_back_ref, &mut back_references)
+                    {
                         add_pattern(
                             Rc::new(move |ch: char| match (last_pat)(ch) {
                                 Check::Ok => Check::Ok,
