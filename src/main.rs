@@ -9,22 +9,19 @@ enum Check {
     OkRepeat,
     EndRepeat,
     Optional,
+    BackRefStart,
+    BackRefEnd,
+    BackRefCall(usize),
+    BackRefValidated,
     Nok,
 }
 
 fn pop_last_pattern(
     patterns: &mut Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
-    record_back_ref: bool,
-    back_references: &mut Vec<Vec<Vec<Rc<dyn Fn(char) -> Check>>>>,
 ) -> Option<Rc<dyn Fn(char) -> Check>> {
     let mut output = None;
     for p in patterns.iter_mut() {
         output = p.pop();
-    }
-    if record_back_ref {
-        if let Some(last) = back_references.last_mut() {
-            last.last_mut().unwrap().pop();
-        }
     }
     output
 }
@@ -32,17 +29,10 @@ fn pop_last_pattern(
 fn add_pattern(
     new_pattern: Rc<dyn Fn(char) -> Check>,
     patterns: &mut Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
-    record_back_ref: bool,
-    back_references: &mut Vec<Vec<Vec<Rc<dyn Fn(char) -> Check>>>>,
 ) {
     println!("Add char to {} pattern", patterns.len());
     for p in patterns.iter_mut() {
         p.push(new_pattern.clone());
-    }
-    if record_back_ref {
-        if let Some(last) = back_references.last_mut() {
-            last.last_mut().unwrap().push(new_pattern);
-        }
     }
 }
 
@@ -57,8 +47,7 @@ fn main() {
         let mut temp_at_parenthesis: Vec<Vec<Rc<dyn Fn(char) -> Check>>> = vec![Vec::new()];
         let mut temps_at_pipes: Vec<Vec<Vec<Rc<dyn Fn(char) -> Check>>>> = Vec::new();
 
-        let mut back_references: Vec<Vec<Vec<Rc<dyn Fn(char) -> Check>>>> = Vec::new();
-        let mut record_back_ref = false;
+        let mut back_ref_new_generation: Vec<Vec<Rc<dyn Fn(char) -> Check>>> = Vec::new();
 
         if let Some(mut raw_pattern) = env::args().last() {
             let mut start_end = (false, false);
@@ -91,8 +80,6 @@ fn main() {
                                     }
                                 }),
                                 &mut patterns,
-                                record_back_ref,
-                                &mut back_references,
                             );
                         }
                         'w' => {
@@ -105,38 +92,15 @@ fn main() {
                                     }
                                 }),
                                 &mut patterns,
-                                record_back_ref,
-                                &mut back_references,
                             );
                         }
                         _ if c.is_ascii_digit() && c != '0' => {
                             dbg!("Add backref");
                             if let Some(index) = c.to_digit(10) {
-                                dbg!("Add backref {}", index);
-                                dbg!(&back_references.len());
-                                if let Some(back) =
-                                    back_references.get((index - 1) as usize).cloned()
-                                {
-                                    dbg!("Add backref");
-                                    dbg!("Back ref -> {}", index - 1);
-                                    let temp = patterns;
-                                    patterns = Vec::new();
-
-                                    dbg!(&temp.len());
-                                    dbg!("->", &back.len());
-                                    dbg!(&patterns.len());
-
-                                    for temp_pattern in temp.iter() {
-                                        for mut back_pattern in back.clone().iter_mut() {
-                                            dbg!(&back_pattern.len());
-                                            let mut new_patt = temp_pattern.clone();
-                                            new_patt.append(&mut back_pattern);
-
-                                            patterns.push(new_patt);
-                                        }
-                                    }
-                                    dbg!(&patterns.len());
-                                }
+                                add_pattern(
+                                    Rc::new(move |_| Check::BackRefCall((index - 1) as usize)),
+                                    &mut patterns,
+                                );
                             }
                         }
                         _ => {}
@@ -164,8 +128,6 @@ fn main() {
                             }
                         }),
                         &mut patterns,
-                        record_back_ref,
-                        &mut back_references,
                     );
                     current.clear();
                 } else if current.starts_with('[') && current.ends_with(']') {
@@ -182,15 +144,14 @@ fn main() {
                             }
                         }),
                         &mut patterns,
-                        record_back_ref,
-                        &mut back_references,
                     );
                     current.clear();
                 } else if current == "(" {
                     temp_at_parenthesis = patterns.clone();
-                    record_back_ref = true;
 
-                    back_references.push(vec![Vec::new()]);
+                    add_pattern(Rc::new(|_| Check::BackRefStart), &mut patterns);
+
+                    // back_references.push(vec![Vec::new()]);
                     // if let Some(last) = back_references.last_mut() {
                     //     last.push(Vec::new());
                     //     // last.clear();
@@ -199,75 +160,59 @@ fn main() {
                 } else if current == "|" {
                     temps_at_pipes.push(patterns);
                     patterns = temp_at_parenthesis.clone();
+                    add_pattern(Rc::new(|_| Check::BackRefEnd), &mut patterns);
+                    add_pattern(Rc::new(|_| Check::BackRefStart), &mut patterns);
 
-                    // record_back_ref = false;
-                    if let Some(last) = back_references.last_mut() {
-                        last.push(Vec::new());
-                        // last.clear();
-                    }
                     current.clear();
                 } else if current == ")" {
                     for p in temps_at_pipes.iter_mut() {
                         patterns.append(p);
                     }
 
-                    record_back_ref = false;
+                    add_pattern(Rc::new(|_| Check::BackRefEnd), &mut patterns);
                     current.clear();
                 } else if current == "+" {
                     println!("Add +");
-                    if let Some(last_pat) =
-                        pop_last_pattern(&mut patterns, record_back_ref, &mut back_references)
-                    {
+                    if let Some(last_pat) = pop_last_pattern(&mut patterns) {
                         add_pattern(
                             Rc::new(move |ch: char| match (last_pat)(ch) {
                                 Check::Ok => Check::OkRepeat,
                                 _ => Check::EndRepeat,
                             }),
                             &mut patterns,
-                            record_back_ref,
-                            &mut back_references,
                         );
                     }
                     current.clear();
                 } else if current == "?" {
                     println!("Add ?");
-                    if let Some(last_pat) =
-                        pop_last_pattern(&mut patterns, record_back_ref, &mut back_references)
-                    {
+                    if let Some(last_pat) = pop_last_pattern(&mut patterns) {
                         add_pattern(
                             Rc::new(move |ch: char| match (last_pat)(ch) {
                                 Check::Ok => Check::Ok,
                                 _ => Check::Optional,
                             }),
                             &mut patterns,
-                            record_back_ref,
-                            &mut back_references,
                         );
                     }
                     current.clear();
                 } else if current == "." {
                     println!("Add .");
-                    add_pattern(
-                        Rc::new(move |_| Check::Ok),
-                        &mut patterns,
-                        record_back_ref,
-                        &mut back_references,
-                    );
+                    add_pattern(Rc::new(move |_| Check::Ok), &mut patterns);
                     current.clear();
                 } else {
                     println!("Add just a char: {}", c);
                     add_pattern(
                         Rc::new(move |ch: char| if ch == c { Check::Ok } else { Check::Nok }),
                         &mut patterns,
-                        record_back_ref,
-                        &mut back_references,
                     );
                     current.clear();
                 }
             }
 
             let found = match start_end {
-                (true, false) => test_pattern(&input_line, &patterns, true),
+                (true, false) => {
+                    test_pattern(&input_line, &patterns, true, &mut back_ref_new_generation)
+                }
                 (false, true) => test_pattern(
                     &input_line.chars().rev().collect(),
                     &patterns
@@ -275,9 +220,10 @@ fn main() {
                         .map(|p| p.iter().cloned().rev().collect())
                         .collect(),
                     true,
+                    &mut back_ref_new_generation,
                 ),
                 (true, true) => {
-                    test_pattern(&input_line, &patterns, true)
+                    test_pattern(&input_line, &patterns, true, &mut back_ref_new_generation)
                         && test_pattern(
                             &input_line.chars().rev().collect(),
                             &patterns
@@ -285,9 +231,10 @@ fn main() {
                                 .map(|p| p.iter().cloned().rev().collect())
                                 .collect(),
                             true,
+                            &mut back_ref_new_generation,
                         )
                 }
-                _ => test_pattern(&input_line, &patterns, false),
+                _ => test_pattern(&input_line, &patterns, false, &mut back_ref_new_generation),
             };
 
             match found {
@@ -310,6 +257,7 @@ fn test_pattern(
     input_line: &String,
     patterns: &Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
     on_start_only: bool,
+    back_ref_new_generation: &mut Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
 ) -> bool {
     for pattern in patterns {
         'aaa: for i in 0..input_line.chars().count() {
@@ -317,6 +265,9 @@ fn test_pattern(
             let mut inp_iter = input_line.chars().skip(i).peekable();
 
             let mut ok_repeat_validation = false;
+            let mut back_ref_record = false;
+            let mut back_ref_current = String::new();
+            let mut back_ref_index = 0;
 
             'bbb: loop {
                 if let Some(p) = pat_iter.next() {
@@ -325,11 +276,21 @@ fn test_pattern(
                         match (p)(*c) {
                             Check::Ok => {
                                 dbg!("Ok");
+
+                                // Put that for all check ?
+                                if back_ref_record {
+                                    back_ref_current.push(*c);
+                                }
+
                                 inp_iter.next();
                                 continue 'bbb;
                             }
                             Check::OkRepeat => {
                                 dbg!("Ok repeat");
+                                // Put that for all check ?
+                                if back_ref_record {
+                                    back_ref_current.push(*c);
+                                }
                                 inp_iter.next();
                                 ok_repeat_validation = true;
                                 continue 'ccc;
@@ -351,12 +312,85 @@ fn test_pattern(
                             }
                             Check::Nok => {
                                 dbg!("Nok");
+
+                                // TODO: OPTIONAL ??????
+                                back_ref_record = false;
+                                back_ref_current.clear();
+
                                 if on_start_only {
                                     return false;
                                 } else {
                                     continue 'aaa;
                                 }
                             }
+                            Check::BackRefStart => {
+                                back_ref_record = true;
+                                back_ref_current.clear();
+                                continue 'bbb;
+                            }
+                            Check::BackRefEnd => {
+                                back_ref_record = false;
+
+                                // TODO: With a map + collect ?
+                                if !back_ref_current.is_empty() {
+                                    println!(
+                                        "Let's go to check this back ref : {}",
+                                        back_ref_current
+                                    );
+                                    let mut aaa: Vec<Rc<dyn Fn(char) -> Check>> = Vec::new();
+                                    for (i, c) in back_ref_current.char_indices() {
+                                        if i < back_ref_current.chars().count() - 1 {
+                                            aaa.push(Rc::new(move |ch: char| {
+                                                if ch == c {
+                                                    Check::Ok
+                                                } else {
+                                                    Check::Nok
+                                                }
+                                            }));
+                                        } else {
+                                            aaa.push(Rc::new(move |ch: char| {
+                                                if ch == c {
+                                                    Check::BackRefValidated
+                                                } else {
+                                                    Check::Nok
+                                                }
+                                            }));
+                                        }
+                                    }
+                                    // aaa.push(Rc::new(|_| Check::BackRefValidated));
+                                    back_ref_new_generation.push(aaa);
+                                }
+
+                                continue 'bbb;
+                            }
+                            Check::BackRefCall(n) => {
+                                println!("Back ref in progress with : {}", c);
+                                if let Some(back_ref) = back_ref_new_generation.get(n) {
+                                    if let Some(back_ref_test) = back_ref.get(back_ref_index) {
+                                        match (back_ref_test)(*c) {
+                                            Check::Ok => {
+                                                back_ref_index += 1;
+                                                inp_iter.next();
+                                                continue 'ccc;
+                                            }
+                                            Check::BackRefValidated => {
+                                                println!("Back ref validated -> go the next pattern char");
+                                                inp_iter.next();
+                                                back_ref_index = 0;
+                                                continue 'bbb;
+                                            }
+                                            _ => {
+                                                back_ref_index = 0;
+                                                continue 'aaa;
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    println!("Error unreachable back reference");
+                                    process::exit(1)
+                                }
+                            }
+                            _ => {}
                         }
                     }
 
