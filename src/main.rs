@@ -13,6 +13,7 @@ enum Check {
     BackRefEnd,
     BackRefCall(usize),
     BackRefValidated,
+    End,
     Nok,
 }
 
@@ -55,10 +56,10 @@ fn main() {
                 raw_pattern.remove(0);
                 start_end.0 = true;
             }
-            if raw_pattern.ends_with('$') {
-                raw_pattern.pop();
-                start_end.1 = true;
-            }
+            // if raw_pattern.ends_with('$') {
+            //     raw_pattern.pop();
+            //     start_end.1 = true;
+            // }
 
             let mut current = String::new();
             for c in raw_pattern.chars() {
@@ -105,6 +106,9 @@ fn main() {
                         }
                         _ => {}
                     }
+                    current.clear();
+                } else if current == "$" {
+                    add_pattern(Rc::new(move |_| Check::End), &mut patterns);
                     current.clear();
                 } else if current.starts_with('[') && !current.ends_with(']') {
                     continue;
@@ -210,30 +214,30 @@ fn main() {
             }
 
             let found = match start_end {
-                (true, false) => {
+                (true, _) => {
                     test_pattern(&input_line, &patterns, true, &mut back_ref_new_generation)
                 }
-                (false, true) => test_pattern(
-                    &input_line.chars().rev().collect(),
-                    &patterns
-                        .iter()
-                        .map(|p| p.iter().cloned().rev().collect())
-                        .collect(),
-                    true,
-                    &mut back_ref_new_generation,
-                ),
-                (true, true) => {
-                    test_pattern(&input_line, &patterns, true, &mut back_ref_new_generation)
-                        && test_pattern(
-                            &input_line.chars().rev().collect(),
-                            &patterns
-                                .iter()
-                                .map(|p| p.iter().cloned().rev().collect())
-                                .collect(),
-                            true,
-                            &mut back_ref_new_generation,
-                        )
-                }
+                // (false, true) => test_pattern(
+                //     &input_line.chars().rev().collect(),
+                //     &patterns
+                //         .iter()
+                //         .map(|p| p.iter().cloned().rev().collect())
+                //         .collect(),
+                //     true,
+                //     &mut back_ref_new_generation,
+                // ),
+                // (true, true) => {
+                //     test_pattern(&input_line, &patterns, true, &mut back_ref_new_generation)
+                //         && test_pattern(
+                //             &input_line.chars().rev().collect(),
+                //             &patterns
+                //                 .iter()
+                //                 .map(|p| p.iter().cloned().rev().collect())
+                //                 .collect(),
+                //             true,
+                //             &mut back_ref_new_generation,
+                //         )
+                // }
                 _ => test_pattern(&input_line, &patterns, false, &mut back_ref_new_generation),
             };
 
@@ -259,7 +263,7 @@ fn test_pattern(
     on_start_only: bool,
     back_ref_new_generation: &mut Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
 ) -> bool {
-    for pattern in patterns {
+    'pouet: for pattern in patterns {
         'aaa: for i in 0..input_line.chars().count() {
             let mut pat_iter = pattern.iter();
             let mut inp_iter = input_line.chars().skip(i).peekable();
@@ -274,6 +278,18 @@ fn test_pattern(
                     'ccc: while let Some(c) = inp_iter.peek() {
                         println!("Testing this char: {}", c);
                         match (p)(*c) {
+                            Check::End => {
+                                continue 'aaa;
+                                // println!("end ???");
+
+                                // if inp_iter.next() == None {
+                                //     println!("bah");
+                                //     return true;
+                                // } else {
+                                //     // inp_iter.next();
+                                //     continue 'bbb;
+                                // }
+                            }
                             Check::Ok => {
                                 dbg!("Ok");
 
@@ -392,6 +408,11 @@ fn test_pattern(
                             }
                             _ => {}
                         }
+                    }
+
+                    if (p)('\0') == Check::End {
+                        println!("hhhaaaa end");
+                        return true;
                     }
 
                     if pat_iter.cloned().next().is_none() {
