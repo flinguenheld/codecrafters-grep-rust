@@ -3,19 +3,23 @@ use std::io;
 use std::process;
 use std::rc::Rc;
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Debug)]
 enum Check {
     Ok,
     OkRepeat,
     EndRepeat,
     Optional,
-    BackRefStart,
-    BackRefEnd,
+    BackRefRecordStart,
+    BackRefRecordEnd,
     BackRefCall(usize),
     BackRefValidated,
     End,
     Nok,
 }
+
+// echo -n "3 red squares and 3 red circles" | ./your_program.sh  "(\d+) (\w+) squares and \1 \2 circles"
+// echo -n "howwdy heeey there, howwdy heeey" | ./your_program.sh  "(how+dy) (he?y) there, \1 \2"
+// echo -n "cat and fish, cat with fish" | ./your_program.sh  "(c.t|d.g) and (f..h|b..d), \1 with \2"
 
 fn pop_last_pattern(
     patterns: &mut Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
@@ -47,8 +51,6 @@ fn main() {
         let mut patterns: Vec<Vec<Rc<dyn Fn(char) -> Check>>> = vec![Vec::new()];
         let mut temp_at_parenthesis: Vec<Vec<Rc<dyn Fn(char) -> Check>>> = vec![Vec::new()];
         let mut temps_at_pipes: Vec<Vec<Vec<Rc<dyn Fn(char) -> Check>>>> = Vec::new();
-
-        let mut back_ref_new_generation: Vec<Vec<Rc<dyn Fn(char) -> Check>>> = Vec::new();
 
         if let Some(mut raw_pattern) = env::args().last() {
             let mut start_end = (false, false);
@@ -153,19 +155,13 @@ fn main() {
                 } else if current == "(" {
                     temp_at_parenthesis = patterns.clone();
 
-                    add_pattern(Rc::new(|_| Check::BackRefStart), &mut patterns);
+                    add_pattern(Rc::new(|_| Check::BackRefRecordStart), &mut patterns);
 
-                    // back_references.push(vec![Vec::new()]);
-                    // if let Some(last) = back_references.last_mut() {
-                    //     last.push(Vec::new());
-                    //     // last.clear();
-                    // }
                     current.clear();
                 } else if current == "|" {
                     temps_at_pipes.push(patterns);
                     patterns = temp_at_parenthesis.clone();
-                    add_pattern(Rc::new(|_| Check::BackRefEnd), &mut patterns);
-                    add_pattern(Rc::new(|_| Check::BackRefStart), &mut patterns);
+                    add_pattern(Rc::new(|_| Check::BackRefRecordStart), &mut patterns);
 
                     current.clear();
                 } else if current == ")" {
@@ -173,7 +169,7 @@ fn main() {
                         patterns.append(p);
                     }
 
-                    add_pattern(Rc::new(|_| Check::BackRefEnd), &mut patterns);
+                    add_pattern(Rc::new(|_| Check::BackRefRecordEnd), &mut patterns);
                     current.clear();
                 } else if current == "+" {
                     println!("Add +");
@@ -214,9 +210,7 @@ fn main() {
             }
 
             let found = match start_end {
-                (true, _) => {
-                    test_pattern(&input_line, &patterns, true, &mut back_ref_new_generation)
-                }
+                (true, _) => test_pattern(&input_line, &patterns, true),
                 // (false, true) => test_pattern(
                 //     &input_line.chars().rev().collect(),
                 //     &patterns
@@ -238,7 +232,7 @@ fn main() {
                 //             &mut back_ref_new_generation,
                 //         )
                 // }
-                _ => test_pattern(&input_line, &patterns, false, &mut back_ref_new_generation),
+                _ => test_pattern(&input_line, &patterns, false),
             };
 
             match found {
@@ -261,10 +255,13 @@ fn test_pattern(
     input_line: &String,
     patterns: &Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
     on_start_only: bool,
-    back_ref_new_generation: &mut Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
+    // back_ref_new_generation: &mut Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
 ) -> bool {
-    'pouet: for pattern in patterns {
+    println!("nB of patterns : {}", patterns.len());
+
+    for pattern in patterns {
         'aaa: for i in 0..input_line.chars().count() {
+            println!("new start at {}", i);
             let mut pat_iter = pattern.iter();
             let mut inp_iter = input_line.chars().skip(i).peekable();
 
@@ -272,6 +269,8 @@ fn test_pattern(
             let mut back_ref_record = false;
             let mut back_ref_current = String::new();
             let mut back_ref_index = 0;
+
+            let mut back_ref_new_generation: Vec<Vec<Rc<dyn Fn(char) -> Check>>> = Vec::new();
 
             'bbb: loop {
                 if let Some(p) = pat_iter.next() {
@@ -330,8 +329,7 @@ fn test_pattern(
                                 dbg!("Nok");
 
                                 // TODO: OPTIONAL ??????
-                                back_ref_record = false;
-                                back_ref_current.clear();
+                                // back_ref_current.clear();
 
                                 if on_start_only {
                                     return false;
@@ -339,20 +337,20 @@ fn test_pattern(
                                     continue 'aaa;
                                 }
                             }
-                            Check::BackRefStart => {
+                            Check::BackRefRecordStart => {
+                                dbg!("Back Ref record Start");
                                 back_ref_record = true;
                                 back_ref_current.clear();
                                 continue 'bbb;
                             }
-                            Check::BackRefEnd => {
+                            Check::BackRefRecordEnd => {
                                 back_ref_record = false;
+
+                                dbg!("Back Ref record END");
 
                                 // TODO: With a map + collect ?
                                 if !back_ref_current.is_empty() {
-                                    println!(
-                                        "Let's go to check this back ref : {}",
-                                        back_ref_current
-                                    );
+                                    println!("---------> Add this back ref: {}", back_ref_current);
                                     let mut aaa: Vec<Rc<dyn Fn(char) -> Check>> = Vec::new();
                                     for (i, c) in back_ref_current.char_indices() {
                                         if i < back_ref_current.chars().count() - 1 {
@@ -380,11 +378,14 @@ fn test_pattern(
                                 continue 'bbb;
                             }
                             Check::BackRefCall(n) => {
-                                println!("Back ref in progress with : {}", c);
+                                println!("Back ref length: {}", back_ref_new_generation.len());
+                                println!("Back ref {} in progress with : {}", n, c);
                                 if let Some(back_ref) = back_ref_new_generation.get(n) {
                                     if let Some(back_ref_test) = back_ref.get(back_ref_index) {
+                                        dbg!((back_ref_test)(*c));
                                         match (back_ref_test)(*c) {
                                             Check::Ok => {
+                                                println!("Back ref ok with the letter: {}", c);
                                                 back_ref_index += 1;
                                                 inp_iter.next();
                                                 continue 'ccc;
@@ -396,7 +397,7 @@ fn test_pattern(
                                                 continue 'bbb;
                                             }
                                             _ => {
-                                                back_ref_index = 0;
+                                                println!("Back ref fail with the letter: {}", c);
                                                 continue 'aaa;
                                             }
                                         }
@@ -414,6 +415,8 @@ fn test_pattern(
                         println!("hhhaaaa end");
                         return true;
                     }
+
+                    println!("Check if is last ???");
 
                     if pat_iter.cloned().next().is_none() {
                         // Special check for + is in the last position
