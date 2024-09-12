@@ -257,9 +257,15 @@ fn test_pattern(
     on_start_only: bool,
     // back_ref_new_generation: &mut Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
 ) -> bool {
-    println!("nB of patterns : {}", patterns.len());
+    println!("------->>>>>> NB OF PATTERNS : {}", patterns.len());
 
-    for pattern in patterns {
+    for (num_DELETE, pattern) in patterns.iter().rev().enumerate() {
+        println!(
+            "-------------------> PATTERN {} sur {}",
+            num_DELETE,
+            patterns.len()
+        );
+
         'aaa: for i in 0..input_line.chars().count() {
             println!("new start at {}", i);
             let mut pat_iter = pattern.iter();
@@ -273,7 +279,13 @@ fn test_pattern(
             let mut back_ref_new_generation: Vec<Vec<Rc<dyn Fn(char) -> Check>>> = Vec::new();
 
             'bbb: loop {
+                println!("bbb start");
                 if let Some(p) = pat_iter.next() {
+                    println!("pattern suivant");
+                    println!(
+                        "value of inp_iter_peeK : {}",
+                        inp_iter.peek().unwrap_or(&'0')
+                    );
                     'ccc: while let Some(c) = inp_iter.peek() {
                         println!("Testing this char: {}", c);
                         match (p)(*c) {
@@ -339,6 +351,7 @@ fn test_pattern(
                             }
                             Check::BackRefRecordStart => {
                                 dbg!("Back Ref record Start");
+
                                 back_ref_record = true;
                                 back_ref_current.clear();
                                 continue 'bbb;
@@ -419,17 +432,23 @@ fn test_pattern(
                     println!("Check if is last ???");
 
                     if pat_iter.cloned().next().is_none() {
+                        println!("Yes it is");
                         // Special check for + is in the last position
                         if ok_repeat_validation {
                             dbg!("Validate last +");
                             return true;
                         }
 
-                        // Special check for ? is in the last position
-                        if (p)('\0') == Check::Optional {
-                            dbg!("Validate last optional");
+                        if (p)('\0') != Check::Nok {
+                            dbg!("Validate last special pattern");
                             return true;
                         }
+
+                        // Special check for ? is in the last position
+                        // if (p)('\0') == Check::Optional {
+                        //     dbg!("Validate last optional");
+                        //     return true;
+                        // }
                     }
 
                     continue 'aaa;
