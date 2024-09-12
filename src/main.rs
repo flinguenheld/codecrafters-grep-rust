@@ -21,6 +21,22 @@ enum Check {
 // echo -n "howwdy heeey there, howwdy heeey" | ./your_program.sh  "(how+dy) (he?y) there, \1 \2"
 // echo -n "cat and fish, cat with fish" | ./your_program.sh  "(c.t|d.g) and (f..h|b..d), \1 with \2"
 
+fn debug(txt: &str, print: bool) {
+    if print {
+        println!("Debug: {}", txt);
+    }
+}
+
+/// Each pipe creates two new patternS which are added to the current list.
+/// So this func add the 'new_pattern' (for one char) at the end of all patternS.
+fn add_pattern(
+    new_pattern: Rc<dyn Fn(char) -> Check>,
+    patterns: &mut Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
+) {
+    for p in patterns.iter_mut() {
+        p.push(new_pattern.clone());
+    }
+}
 fn pop_last_pattern(
     patterns: &mut Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
 ) -> Option<Rc<dyn Fn(char) -> Check>> {
@@ -31,20 +47,12 @@ fn pop_last_pattern(
     output
 }
 
-fn add_pattern(
-    new_pattern: Rc<dyn Fn(char) -> Check>,
-    patterns: &mut Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
-) {
-    println!("Add char to {} pattern", patterns.len());
-    for p in patterns.iter_mut() {
-        p.push(new_pattern.clone());
-    }
-}
-
 // Usage: echo <input_text> | your_program.sh -E <pattern>
 fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     // println!("Logs from your program will appear here!");
+
+    let db = env::args().any(|a| a == "-d");
 
     let mut input_line = String::new();
     if io::stdin().read_line(&mut input_line).is_ok() {
@@ -52,24 +60,17 @@ fn main() {
         let mut temp_at_parenthesis: Vec<Vec<Rc<dyn Fn(char) -> Check>>> = vec![Vec::new()];
         let mut temps_at_pipes: Vec<Vec<Vec<Rc<dyn Fn(char) -> Check>>>> = Vec::new();
 
-        if let Some(mut raw_pattern) = env::args().last() {
-            let mut start_end = (false, false);
-            if raw_pattern.starts_with('^') {
-                raw_pattern.remove(0);
-                start_end.0 = true;
-            }
-            // if raw_pattern.ends_with('$') {
-            //     raw_pattern.pop();
-            //     start_end.1 = true;
-            // }
+        if let Some(raw_pattern) = env::args().last() {
+            let on_start = raw_pattern.starts_with('^');
 
             let mut current = String::new();
             for c in raw_pattern.chars() {
                 current.push(c);
 
-                dbg!(&current);
-
-                if current == "\\" {
+                if current == "^" && on_start {
+                    current.clear();
+                    continue;
+                } else if current == "\\" {
                     continue;
                 } else if current.starts_with('\\') {
                     match c {
@@ -98,8 +99,8 @@ fn main() {
                             );
                         }
                         _ if c.is_ascii_digit() && c != '0' => {
-                            dbg!("Add backref");
                             if let Some(index) = c.to_digit(10) {
+                                debug(&format!("Add call to back reference {}", index - 1), db);
                                 add_pattern(
                                     Rc::new(move |_| Check::BackRefCall((index - 1) as usize)),
                                     &mut patterns,
@@ -154,7 +155,6 @@ fn main() {
                     current.clear();
                 } else if current == "(" {
                     temp_at_parenthesis = patterns.clone();
-
                     add_pattern(Rc::new(|_| Check::BackRefRecordStart), &mut patterns);
 
                     current.clear();
@@ -172,8 +172,8 @@ fn main() {
                     add_pattern(Rc::new(|_| Check::BackRefRecordEnd), &mut patterns);
                     current.clear();
                 } else if current == "+" {
-                    println!("Add +");
                     if let Some(last_pat) = pop_last_pattern(&mut patterns) {
+                        debug("Add +", db);
                         add_pattern(
                             Rc::new(move |ch: char| match (last_pat)(ch) {
                                 Check::Ok => Check::OkRepeat,
@@ -184,8 +184,8 @@ fn main() {
                     }
                     current.clear();
                 } else if current == "?" {
-                    println!("Add ?");
                     if let Some(last_pat) = pop_last_pattern(&mut patterns) {
+                        debug("Add ?", db);
                         add_pattern(
                             Rc::new(move |ch: char| match (last_pat)(ch) {
                                 Check::Ok => Check::Ok,
@@ -196,11 +196,11 @@ fn main() {
                     }
                     current.clear();
                 } else if current == "." {
-                    println!("Add .");
+                    debug("Add .", db);
                     add_pattern(Rc::new(move |_| Check::Ok), &mut patterns);
                     current.clear();
                 } else {
-                    println!("Add just a char: {}", c);
+                    debug(&format!("Add a simple char: '{}'", c), db);
                     add_pattern(
                         Rc::new(move |ch: char| if ch == c { Check::Ok } else { Check::Nok }),
                         &mut patterns,
@@ -209,33 +209,8 @@ fn main() {
                 }
             }
 
-            let found = match start_end {
-                (true, _) => test_pattern(&input_line, &patterns, true),
-                // (false, true) => test_pattern(
-                //     &input_line.chars().rev().collect(),
-                //     &patterns
-                //         .iter()
-                //         .map(|p| p.iter().cloned().rev().collect())
-                //         .collect(),
-                //     true,
-                //     &mut back_ref_new_generation,
-                // ),
-                // (true, true) => {
-                //     test_pattern(&input_line, &patterns, true, &mut back_ref_new_generation)
-                //         && test_pattern(
-                //             &input_line.chars().rev().collect(),
-                //             &patterns
-                //                 .iter()
-                //                 .map(|p| p.iter().cloned().rev().collect())
-                //                 .collect(),
-                //             true,
-                //             &mut back_ref_new_generation,
-                //         )
-                // }
-                _ => test_pattern(&input_line, &patterns, false),
-            };
-
-            match found {
+            debug("----- TESTS -----", db);
+            match test_pattern(&input_line, &patterns, on_start, db) {
                 true => {
                     println!("Found");
                     process::exit(0)
@@ -255,54 +230,31 @@ fn test_pattern(
     input_line: &String,
     patterns: &Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
     on_start_only: bool,
-    // back_ref_new_generation: &mut Vec<Vec<Rc<dyn Fn(char) -> Check>>>,
+    vb: bool,
 ) -> bool {
-    println!("------->>>>>> NB OF PATTERNS : {}", patterns.len());
-
-    for (num_DELETE, pattern) in patterns.iter().rev().enumerate() {
-        println!(
-            "-------------------> PATTERN {} sur {}",
-            num_DELETE,
-            patterns.len()
-        );
-
+    for (nb, pattern) in patterns.iter().rev().enumerate() {
+        debug(&format!("Pattern {} on {}", nb, patterns.len()), vb);
         'aaa: for i in 0..input_line.chars().count() {
-            println!("new start at {}", i);
             let mut pat_iter = pattern.iter();
             let mut inp_iter = input_line.chars().skip(i).peekable();
 
             let mut ok_repeat_validation = false;
             let mut back_ref_record = false;
-            let mut back_ref_current = String::new();
-            let mut back_ref_index = 0;
-
-            let mut back_ref_new_generation: Vec<Vec<Rc<dyn Fn(char) -> Check>>> = Vec::new();
+            let mut back_ref_current = String::new(); // To set the value of a backref
+            let mut back_ref_pattern_index = 0; // To read a backref
+            let mut back_references: Vec<Vec<Rc<dyn Fn(char) -> Check>>> = Vec::new();
 
             'bbb: loop {
-                println!("bbb start");
                 if let Some(p) = pat_iter.next() {
-                    println!("pattern suivant");
-                    println!(
-                        "value of inp_iter_peeK : {}",
-                        inp_iter.peek().unwrap_or(&'0')
-                    );
                     'ccc: while let Some(c) = inp_iter.peek() {
-                        println!("Testing this char: {}", c);
+                        debug(&format!("Test -> '{}'", c), vb);
+                        dbg!(&(p)(*c));
                         match (p)(*c) {
                             Check::End => {
                                 continue 'aaa;
-                                // println!("end ???");
-
-                                // if inp_iter.next() == None {
-                                //     println!("bah");
-                                //     return true;
-                                // } else {
-                                //     // inp_iter.next();
-                                //     continue 'bbb;
-                                // }
                             }
                             Check::Ok => {
-                                dbg!("Ok");
+                                debug("Ok", vb);
 
                                 // Put that for all check ?
                                 if back_ref_record {
@@ -313,7 +265,7 @@ fn test_pattern(
                                 continue 'bbb;
                             }
                             Check::OkRepeat => {
-                                dbg!("Ok repeat");
+                                debug("Ok repeat", vb);
                                 // Put that for all check ?
                                 if back_ref_record {
                                     back_ref_current.push(*c);
@@ -323,7 +275,7 @@ fn test_pattern(
                                 continue 'ccc;
                             }
                             Check::EndRepeat => {
-                                dbg!("End repeat");
+                                debug("End repeat", vb);
                                 if ok_repeat_validation {
                                     ok_repeat_validation = false;
 
@@ -333,16 +285,11 @@ fn test_pattern(
                                 }
                             }
                             Check::Optional => {
-                                dbg!("Optional");
-                                // inp_iter.next();
+                                debug("Optional", vb);
                                 continue 'bbb;
                             }
                             Check::Nok => {
-                                dbg!("Nok");
-
-                                // TODO: OPTIONAL ??????
-                                // back_ref_current.clear();
-
+                                debug("Nok", vb);
                                 if on_start_only {
                                     return false;
                                 } else {
@@ -350,67 +297,68 @@ fn test_pattern(
                                 }
                             }
                             Check::BackRefRecordStart => {
-                                dbg!("Back Ref record Start");
+                                debug("Back ref record -> start", vb);
 
                                 back_ref_record = true;
                                 back_ref_current.clear();
                                 continue 'bbb;
                             }
                             Check::BackRefRecordEnd => {
+                                debug("Back ref record -> end", vb);
                                 back_ref_record = false;
-
-                                dbg!("Back Ref record END");
 
                                 // TODO: With a map + collect ?
                                 if !back_ref_current.is_empty() {
-                                    println!("---------> Add this back ref: {}", back_ref_current);
-                                    let mut aaa: Vec<Rc<dyn Fn(char) -> Check>> = Vec::new();
+                                    debug(&format!("Add back ref: {}", back_ref_current), vb);
+                                    back_references.push(Vec::new());
                                     for (i, c) in back_ref_current.char_indices() {
                                         if i < back_ref_current.chars().count() - 1 {
-                                            aaa.push(Rc::new(move |ch: char| {
-                                                if ch == c {
-                                                    Check::Ok
-                                                } else {
-                                                    Check::Nok
-                                                }
-                                            }));
+                                            back_references.last_mut().unwrap().push(Rc::new(
+                                                move |ch: char| {
+                                                    if ch == c {
+                                                        Check::Ok
+                                                    } else {
+                                                        Check::Nok
+                                                    }
+                                                },
+                                            ));
                                         } else {
-                                            aaa.push(Rc::new(move |ch: char| {
-                                                if ch == c {
-                                                    Check::BackRefValidated
-                                                } else {
-                                                    Check::Nok
-                                                }
-                                            }));
+                                            back_references.last_mut().unwrap().push(Rc::new(
+                                                move |ch: char| {
+                                                    if ch == c {
+                                                        Check::BackRefValidated
+                                                    } else {
+                                                        Check::Nok
+                                                    }
+                                                },
+                                            ));
                                         }
                                     }
-                                    // aaa.push(Rc::new(|_| Check::BackRefValidated));
-                                    back_ref_new_generation.push(aaa);
                                 }
 
                                 continue 'bbb;
                             }
                             Check::BackRefCall(n) => {
-                                println!("Back ref length: {}", back_ref_new_generation.len());
-                                println!("Back ref {} in progress with : {}", n, c);
-                                if let Some(back_ref) = back_ref_new_generation.get(n) {
-                                    if let Some(back_ref_test) = back_ref.get(back_ref_index) {
-                                        dbg!((back_ref_test)(*c));
+                                debug(&format!("Call back ref {} with: '{}'", n, c), vb);
+                                if let Some(back_ref) = back_references.get(n) {
+                                    if let Some(back_ref_test) =
+                                        back_ref.get(back_ref_pattern_index)
+                                    {
                                         match (back_ref_test)(*c) {
                                             Check::Ok => {
-                                                println!("Back ref ok with the letter: {}", c);
-                                                back_ref_index += 1;
+                                                debug(&format!("Back ref Ok with: '{}'", c), vb);
+                                                back_ref_pattern_index += 1;
                                                 inp_iter.next();
                                                 continue 'ccc;
                                             }
                                             Check::BackRefValidated => {
-                                                println!("Back ref validated -> go the next pattern char");
+                                                debug("Back ref Validated", vb);
                                                 inp_iter.next();
-                                                back_ref_index = 0;
+                                                back_ref_pattern_index = 0;
                                                 continue 'bbb;
                                             }
                                             _ => {
-                                                println!("Back ref fail with the letter: {}", c);
+                                                debug(&format!("Back ref Nok with: '{}'", c), vb);
                                                 continue 'aaa;
                                             }
                                         }
@@ -425,30 +373,20 @@ fn test_pattern(
                     }
 
                     if (p)('\0') == Check::End {
-                        println!("hhhaaaa end");
                         return true;
                     }
 
-                    println!("Check if is last ???");
-
                     if pat_iter.cloned().next().is_none() {
-                        println!("Yes it is");
-                        // Special check for + is in the last position
-                        if ok_repeat_validation {
-                            dbg!("Validate last +");
+                        let result = (p)('\0');
+                        debug(&format!("Last pattern, result -> {:?}", result), vb);
+
+                        // Validation if the last char is a special pattern
+                        if result != Check::Nok
+                            && !(result == Check::EndRepeat && !ok_repeat_validation)
+                        {
+                            debug("Special last pattern validated", vb);
                             return true;
                         }
-
-                        if (p)('\0') != Check::Nok {
-                            dbg!("Validate last special pattern");
-                            return true;
-                        }
-
-                        // Special check for ? is in the last position
-                        // if (p)('\0') == Check::Optional {
-                        //     dbg!("Validate last optional");
-                        //     return true;
-                        // }
                     }
 
                     continue 'aaa;
