@@ -248,7 +248,6 @@ fn test_pattern(
                 if let Some(p) = pat_iter.next() {
                     'ccc: while let Some(c) = inp_iter.peek() {
                         debug(&format!("Test -> '{}'", c), vb);
-                        dbg!(&(p)(*c));
                         match (p)(*c) {
                             Check::End => {
                                 continue 'aaa;
