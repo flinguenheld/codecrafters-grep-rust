@@ -42,9 +42,6 @@ fn pop_last_pattern(patterns: &mut [Vec<Pattern>]) -> Option<Pattern> {
 
 // Usage: echo <input_text> | your_program.sh -E <pattern>
 fn main() {
-    // You can use print statements as follows for debugging, they'll be visible when running tests.
-    // println!("Logs from your program will appear here!");
-
     let db = env::args().any(|a| a == "-d");
 
     let mut input_line = String::new();
